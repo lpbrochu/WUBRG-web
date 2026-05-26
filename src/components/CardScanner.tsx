@@ -37,6 +37,16 @@ export const CardScanner: React.FC<CardScannerProps> = ({ onClose, onSelectScann
     };
   }, [selectedCameraId]);
 
+  // Attach stream to video element when it mounts and is visible
+  useEffect(() => {
+    if (!isInitializing && hasPermission && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(err => {
+        console.error("Error playing camera video stream:", err);
+      });
+    }
+  }, [isInitializing, hasPermission]);
+
   const setupCamera = async () => {
     setIsInitializing(true);
     setOcrError(null);
