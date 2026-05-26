@@ -27,6 +27,7 @@ export const CardScanner: React.FC<CardScannerProps> = ({ onClose, onSelectScann
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+  const [detectedCandidates, setDetectedCandidates] = useState<string[]>([]);
 
   // Start Camera Stream
   useEffect(() => {
@@ -119,6 +120,7 @@ export const CardScanner: React.FC<CardScannerProps> = ({ onClose, onSelectScann
     setIsScanning(true);
     setScanStatus('Scanning card name...');
     setOcrError(null);
+    setDetectedCandidates([]);
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -129,19 +131,61 @@ export const CardScanner: React.FC<CardScannerProps> = ({ onClose, onSelectScann
       return;
     }
 
-    // Set canvas dimensions matching video resolution
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Set canvas dimensions by calculating the exact card name area inside the viewfinder
+    const viewfinder = document.querySelector('.scanner-viewfinder');
+    const videoRect = video.getBoundingClientRect();
+    
+    if (viewfinder && videoRect.width > 0) {
+      const vfRect = viewfinder.getBoundingClientRect();
+      
+      // Card name is in the top-middle region of the viewfinder
+      // Crop a rectangle relative to the viewfinder bounds
+      const cropX = vfRect.left - videoRect.left + (vfRect.width * 0.05);
+      const cropY = vfRect.top - videoRect.top + (vfRect.height * 0.02);
+      const cropWidth = vfRect.width * 0.9;
+      const cropHeight = vfRect.height * 0.25; // upper 25% area containing the title strip
+      
+      // Translate display scales to actual resolution dimensions
+      const scaleX = video.videoWidth / videoRect.width;
+      const scaleY = video.videoHeight / videoRect.height;
+      
+      const sourceX = Math.max(0, cropX * scaleX);
+      const sourceY = Math.max(0, cropY * scaleY);
+      const sourceWidth = Math.min(video.videoWidth - sourceX, cropWidth * scaleX);
+      const sourceHeight = Math.min(video.videoHeight - sourceY, cropHeight * scaleY);
+      
+      canvas.width = sourceWidth;
+      canvas.height = sourceHeight;
+      
+      ctx.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+    } else {
+      // Fallback: Crop center horizontal third if viewfinder element is missing
+      const fallbackW = video.videoWidth * 0.6;
+      const fallbackH = video.videoHeight * 0.15;
+      const fallbackX = (video.videoWidth - fallbackW) / 2;
+      const fallbackY = video.videoHeight * 0.25; // upper quadrant
+      
+      canvas.width = fallbackW;
+      canvas.height = fallbackH;
+      ctx.drawImage(video, fallbackX, fallbackY, fallbackW, fallbackH, 0, 0, fallbackW, fallbackH);
+    }
 
-    // Crop coordinates (corresponding to center blue viewfinder)
-    // The viewfinder is 260px wide by 360px tall in CSS, centered.
-    // Let's translate this relative crop to video coordinate space
-    const vWidth = video.videoWidth;
-    const vHeight = video.videoHeight;
-
-    // Capture the entire frame or crop around the center
-    // Let's capture the center part containing the title
-    ctx.drawImage(video, 0, 0, vWidth, vHeight);
+    // Pre-processing: Convert to black-and-white high contrast image for optimal OCR success rate
+    try {
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const grayscale = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        // Adaptive thresholding: if brighter than 115, make it pure white, else pure black
+        const finalVal = grayscale > 115 ? 255 : 0;
+        d[i] = finalVal;
+        d[i + 1] = finalVal;
+        d[i + 2] = finalVal;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    } catch (e) {
+      console.warn("Failed canvas pixel preprocessing, falling back to raw crop:", e);
+    }
 
     try {
       // Initialize Tesseract worker
@@ -152,16 +196,17 @@ export const CardScanner: React.FC<CardScannerProps> = ({ onClose, onSelectScann
       await worker.terminate();
 
       if (!text || !text.trim()) {
-        throw new Error('No text detected. Try holding the card steady under better lighting.');
+        throw new Error('No text recognized. Align card title inside the top section of the blue box.');
       }
 
       // Filter and score detected words
       const candidates = extractCardNameCandidates(text);
       if (candidates.length === 0) {
-        throw new Error('Could not identify a clear card name. Ensure the card is aligned and text is sharp.');
+        throw new Error('No card name candidates identified. Ensure the card is aligned and text is sharp.');
       }
 
       setScanStatus(`Searching candidates: "${candidates.slice(0, 2).join(', ')}"`);
+      setDetectedCandidates(candidates);
 
       // Try searching Scryfall with our best scored candidate names
       for (const name of candidates) {
@@ -178,7 +223,7 @@ export const CardScanner: React.FC<CardScannerProps> = ({ onClose, onSelectScann
         }
       }
 
-      throw new Error(`Scryfall found no matches for scanned words: "${candidates.join(', ')}"`);
+      throw new Error(`Scryfall found no matches for scanned words: "${candidates.join(', ')}". Choose manually or retry.`);
     } catch (err) {
       console.error('OCR Process failed:', err);
       setOcrError(err instanceof Error ? err.message : 'Recognition failed.');
@@ -328,14 +373,46 @@ export const CardScanner: React.FC<CardScannerProps> = ({ onClose, onSelectScann
 
       {/* Bottom control panel */}
       {hasPermission && !isInitializing && (
-        <div className="scanner-footer">
+        <div className="scanner-footer" style={{ background: 'rgba(12,12,14,0.92)', borderRadius: '18px 18px 0 0', padding: '16px 20px 24px 20px', width: '100%', position: 'absolute', bottom: 0, left: 0, right: 0 }}>
           {ocrError && (
-            <div className="glass-panel" style={{ padding: '8px 14px', borderRadius: '12px', borderLeft: '4px solid #ff6b6b', background: 'rgba(255, 107, 107, 0.1)', fontSize: '12px', color: '#ff8b8b', maxWidth: '90%', textAlign: 'center' }}>
+            <div className="glass-panel" style={{ padding: '8px 14px', borderRadius: '12px', borderLeft: '4px solid #ff6b6b', background: 'rgba(255, 107, 107, 0.1)', fontSize: '12px', color: '#ff8b8b', width: '100%', textAlign: 'center', marginBottom: '10px' }}>
               {ocrError}
             </div>
           )}
 
-          <div className="scanner-prompt glass-material">
+          {detectedCandidates.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>Tap detected name to search:</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', maxHeight: '80px', overflowY: 'auto', width: '100%', padding: '2px' }}>
+                {detectedCandidates.map((candidate) => (
+                  <button
+                    key={candidate}
+                    type="button"
+                    className="tag-pill"
+                    style={{ border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.08)', cursor: 'pointer', outline: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '6px', color: '#fff', fontWeight: 600 }}
+                    onClick={async () => {
+                      setScanStatus(`Searching Scryfall for "${candidate}"...`);
+                      try {
+                        const results = await scryfallClient.searchCommanderCandidates(candidate);
+                        if (results.length > 0) {
+                          onSelectScannedCommander(results);
+                          stopCamera();
+                        } else {
+                          alert(`Scryfall found no exact commander matches for "${candidate}". Try correcting name inside the search box.`);
+                        }
+                      } catch (err) {
+                        alert(`Search failed: ${err instanceof Error ? err.message : String(err)}`);
+                      }
+                    }}
+                  >
+                    {candidate}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="scanner-prompt glass-material" style={{ marginBottom: '12px', width: '100%', textAlign: 'center' }}>
             {scanStatus}
           </div>
 
@@ -345,6 +422,7 @@ export const CardScanner: React.FC<CardScannerProps> = ({ onClose, onSelectScann
             onClick={captureAndRecognize}
             disabled={isScanning}
             aria-label="Capture and scan card"
+            style={{ margin: '0 auto' }}
           >
             {isScanning ? (
               <RefreshCw size={24} style={{ animation: 'spin 1.2s linear infinite' }} />
