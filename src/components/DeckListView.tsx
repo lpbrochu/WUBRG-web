@@ -18,7 +18,8 @@ import {
   Sparkles,
   Trash2,
   AlertTriangle,
-  FolderOpen
+  FolderOpen,
+  Swords
 } from 'lucide-react';
 import { MTGDeck, DeckFilter, MTGDeckFormat, MTGDeckOrigin, MTGColorDisplay, MTGColor } from '../types/deck';
 import { ColorIdentityDots } from './DeckFilterSheet';
@@ -35,6 +36,7 @@ interface DeckListViewProps {
   filter: DeckFilter;
   setFilter: (f: DeckFilter) => void;
   onOpenFilterSheet: () => void;
+  onRandomMatchup: (pool: MTGDeck[]) => void;
 }
 
 export const DeckListView: React.FC<DeckListViewProps> = ({
@@ -48,6 +50,7 @@ export const DeckListView: React.FC<DeckListViewProps> = ({
   filter,
   setFilter,
   onOpenFilterSheet,
+  onRandomMatchup,
 }) => {
   const [searchText, setSearchText] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -212,6 +215,17 @@ export const DeckListView: React.FC<DeckListViewProps> = ({
               style={{ position: 'absolute', top: '8px', right: '8px' }}
             />
           )}
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-icon"
+          onClick={() => onRandomMatchup(filteredDecks)}
+          aria-label="Random deck clash matchup"
+          title="Deck Clash Matchup"
+          disabled={decks.length < 2}
+        >
+          <Swords size={18} />
         </button>
 
         <button

@@ -15,6 +15,7 @@ import { DeckEditor } from './components/DeckEditor';
 import { DeckFilterSheet } from './components/DeckFilterSheet';
 import { CardScanner } from './components/CardScanner';
 import { ScryfallCard } from './services/scryfall';
+import { DeckClashModal } from './components/DeckClashModal';
 
 function App() {
   const [decks, setDecks] = useState<MTGDeck[]>([]);
@@ -25,6 +26,11 @@ function App() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isClashOpen, setIsClashOpen] = useState(false);
+
+  // Clash States
+  const [clashDecks, setClashDecks] = useState<[MTGDeck, MTGDeck] | null>(null);
+  const [clashPool, setClashPool] = useState<MTGDeck[]>([]);
 
   // Settings
   const [autoSync, setAutoSync] = useState(true);
@@ -89,6 +95,36 @@ function App() {
     updateDecksInStorage(updated);
     if (selectedDeck && selectedDeck.id === id) {
       setSelectedDeck(null);
+    }
+  };
+
+  const handleRandomMatchup = (pool: MTGDeck[]) => {
+    let activePool = pool;
+    if (activePool.length < 2) {
+      activePool = decks;
+    }
+    if (activePool.length < 2) {
+      alert("You need at least 2 decks in your library to select a matchup!");
+      return;
+    }
+    setClashPool(activePool);
+    rollMatchup(activePool);
+  };
+
+  const rollMatchup = (pool: MTGDeck[]) => {
+    const idx1 = Math.floor(Math.random() * pool.length);
+    let idx2 = Math.floor(Math.random() * pool.length);
+    while (idx2 === idx1) {
+      idx2 = Math.floor(Math.random() * pool.length);
+    }
+    setClashDecks([pool[idx1], pool[idx2]]);
+    setIsClashOpen(true);
+  };
+
+  const handleReRollClash = () => {
+    const pool = clashPool.length >= 2 ? clashPool : decks;
+    if (pool.length >= 2) {
+      rollMatchup(pool);
     }
   };
 
@@ -221,6 +257,7 @@ function App() {
             filter={filter}
             setFilter={setFilter}
             onOpenFilterSheet={() => setIsFilterOpen(true)}
+            onRandomMatchup={handleRandomMatchup}
           />
         )}
       </main>
@@ -250,6 +287,15 @@ function App() {
         <CardScanner
           onClose={() => setIsScannerOpen(false)}
           onSelectScannedCommander={handleSelectScannedCommander}
+        />
+      )}
+
+      {/* Deck Clash Modal Overlay */}
+      {isClashOpen && clashDecks && (
+        <DeckClashModal
+          decks={clashDecks}
+          onClose={() => setIsClashOpen(false)}
+          onReRoll={handleReRollClash}
         />
       )}
 
