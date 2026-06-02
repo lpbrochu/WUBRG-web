@@ -1567,3 +1567,40 @@ html {
   }
 }
 
+/* ==========================================
+   Commander Card Image Distortion Fixes
+   ========================================== */
+.clash-card-artwork img,
+.commander-artwork-stack img {
+  display: block !important;
+  position: absolute !important;
+  top: 0 !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  transition: opacity var(--transition-normal);
+}
+
+/* Single commander images should cover 100% of the width */
+.clash-card-artwork img:not([class*="clash-artwork-stacked"]),
+.commander-artwork-stack img:not([class*="artwork-stacked"]) {
+  width: 100% !important;
+  left: 0 !important;
+}
+
+/* Stacked commander partner layouts */
+.clash-card-artwork img.clash-artwork-stacked-0,
+.commander-artwork-stack img.artwork-stacked-0 {
+  width: 80% !important;
+  left: 0 !important;
+  z-index: 1 !important;
+}
+
+.clash-card-artwork img.clash-artwork-stacked-1,
+.commander-artwork-stack img.artwork-stacked-1 {
+  width: 80% !important;
+  left: auto !important;
+  right: 0 !important;
+  z-index: 2 !important;
+}
+
+
