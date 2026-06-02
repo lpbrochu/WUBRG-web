@@ -112,12 +112,30 @@ function App() {
   };
 
   const rollMatchup = (pool: MTGDeck[]) => {
+    if (pool.length < 2) return;
+
+    // 1. Pick a first deck randomly from the pool
     const idx1 = Math.floor(Math.random() * pool.length);
-    let idx2 = Math.floor(Math.random() * pool.length);
-    while (idx2 === idx1) {
-      idx2 = Math.floor(Math.random() * pool.length);
+    const deckA = pool[idx1];
+
+    // 2. Filter the pool to find other decks (excluding deckA itself) with the exact same power level
+    let candidates = pool.filter((d) => d.id !== deckA.id && d.powerLevel === deckA.powerLevel);
+
+    // 3. Fallback 1: If no exact power level matches exist, look for power level +/- 1
+    if (candidates.length === 0) {
+      candidates = pool.filter((d) => d.id !== deckA.id && Math.abs(d.powerLevel - deckA.powerLevel) <= 1);
     }
-    setClashDecks([pool[idx1], pool[idx2]]);
+
+    // 4. Fallback 2: If still no candidates exist, pick any distinct deck from the pool
+    if (candidates.length === 0) {
+      candidates = pool.filter((d) => d.id !== deckA.id);
+    }
+
+    // 5. Select a random deck from the final candidates list
+    const idx2 = Math.floor(Math.random() * candidates.length);
+    const deckB = candidates[idx2];
+
+    setClashDecks([deckA, deckB]);
     setIsClashOpen(true);
   };
 
